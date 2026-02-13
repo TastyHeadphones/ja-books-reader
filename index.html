@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>日文书阅读器</title>
+  </head>
+  <body>
+    <div class="background-layer">
+      <div class="orb orb-a"></div>
+      <div class="orb orb-b"></div>
+      <div class="grid-overlay"></div>
+    </div>
+
+    <div class="app-shell">
+      <header class="top-bar">
+        <div class="book-heading">
+          <p class="eyebrow">Apple-Style Japanese Reader</p>
+          <h1 id="book-title">加载中...</h1>
+          <p id="book-subtitle" class="book-subtitle"></p>
+        </div>
+
+        <div class="tts-panel">
+          <label class="control-field key-field">
+            <span>Google TTS API Key</span>
+            <input
+              id="api-key-input"
+              type="password"
+              autocomplete="off"
+              placeholder="粘贴你的 Google Cloud API Key"
+            />
+          </label>
+
+          <label class="control-field compact">
+            <span>音色</span>
+            <select id="voice-select"></select>
+          </label>
+
+          <label class="control-field compact">
+            <span>语速 <b id="speed-value">1.00x</b></span>
+            <input id="speed-range" type="range" min="0.75" max="1.25" step="0.05" value="1" />
+          </label>
+
+          <button id="stop-button" class="ghost-button" type="button">停止播放</button>
+        </div>
+      </header>
+
+      <div class="main-layout">
+        <aside class="chapter-sidebar">
+          <div class="sidebar-title-row">
+            <h2>章节目录</h2>
+            <span id="chapter-count"></span>
+          </div>
+          <div id="chapter-list" class="chapter-list"></div>
+        </aside>
+
+        <main class="reader-pane">
+          <div class="reader-head">
+            <h2 id="chapter-title">章节</h2>
+            <p>点任意句子即可朗读，假名会显示在汉字上方。</p>
+          </div>
+
+          <article id="reader-content" class="reader-content"></article>
+        </main>
+      </div>
+
+      <footer class="status-bar">
+        <p id="status-text">准备中...</p>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
+

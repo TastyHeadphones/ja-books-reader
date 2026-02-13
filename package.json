@@ -1,0 +1,36 @@
+{
+  "name": "ja-books-reader",
+  "version": "1.0.0",
+  "description": "Japanese book web reader with furigana and Google Cloud TTS",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "build:book": "node scripts/extract-epub.js",
+    "prepare:dict": "node scripts/copy-kuromoji-dict.js",
+    "setup": "npm run prepare:dict && npm run build:book",
+    "postinstall": "npm run prepare:dict"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TastyHeadphones/ja-books-reader.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/TastyHeadphones/ja-books-reader/issues"
+  },
+  "homepage": "https://github.com/TastyHeadphones/ja-books-reader#readme",
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "cheerio": "^1.2.0",
+    "fast-xml-parser": "^5.3.5",
+    "kuromoji": "^0.1.2",
+    "path-browserify": "^1.0.1",
+    "vite": "^7.3.1",
+    "wanakana": "^5.3.1"
+  }
+}
