@@ -1,6 +1,6 @@
 import "./style.css";
 
-const BOOK_DATA_PATH = "/data/book.json";
+const BOOK_DATA_PATH = `${import.meta.env.BASE_URL}data/book.json`;
 
 const STORAGE_KEYS = {
   apiKey: "ja-reader-google-tts-key",
@@ -412,4 +412,3 @@ function truncate(text, maxLength) {
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
-
