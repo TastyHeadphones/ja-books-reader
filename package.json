@@ -8,9 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "build:book": "node scripts/extract-epub.js",
-    "prepare:dict": "node scripts/copy-kuromoji-dict.js",
-    "setup": "npm run prepare:dict && npm run build:book",
-    "postinstall": "npm run prepare:dict"
+    "setup": "npm run build:book"
   },
   "repository": {
     "type": "git",
@@ -29,7 +27,6 @@
     "cheerio": "^1.2.0",
     "fast-xml-parser": "^5.3.5",
     "kuromoji": "^0.1.2",
-    "path-browserify": "^1.0.1",
     "vite": "^7.3.1",
     "wanakana": "^5.3.1"
   }

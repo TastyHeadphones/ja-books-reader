@@ -4,7 +4,7 @@
 
 - 将 `books` 目录中的 EPUB 提取为网页可读章节
 - 句子级点击朗读（Google Cloud Text-to-Speech）
-- 日文汉字自动标注假名（furigana）
+- 日文汉字自动标注假名（furigana，构建阶段预处理）
 - Apple 风格的轻玻璃化 UI
 
 ## Quick Start
@@ -26,6 +26,7 @@ npm run dev
 ## 书籍数据构建
 
 默认会读取 `books` 目录下第一个 `.epub`，输出到 `public/data/book.json`。
+构建时会同时生成句子级假名，前端首屏不再依赖浏览器端分词。
 
 ```bash
 npm run build:book

@@ -31,9 +31,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Ensure dictionary assets
-        run: npm run prepare:dict
-
       - name: Ensure book data
         run: |
           if [ ! -f public/data/book.json ]; then
@@ -62,4 +59,3 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
-

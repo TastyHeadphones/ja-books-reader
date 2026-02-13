@@ -5,9 +5,13 @@ const path = require("path");
 const AdmZip = require("adm-zip");
 const cheerio = require("cheerio");
 const { XMLParser } = require("fast-xml-parser");
+const kuromoji = require("kuromoji");
+const { toHiragana } = require("wanakana");
 
 const BOOKS_DIR = path.resolve(__dirname, "..", "books");
 const OUTPUT_PATH = path.resolve(__dirname, "..", "public", "data", "book.json");
+const TOKENIZER_DIC_PATH = path.resolve(__dirname, "..", "node_modules", "kuromoji", "dict");
+const KANJI_REGEX = /[\u3400-\u9fff々〆ヵヶ]/u;
 
 function asArray(value) {
   if (!value) {
@@ -69,6 +73,72 @@ function cleanText(text) {
     .trim();
 }
 
+function escapeHtml(text) {
+  return String(text || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function splitSentences(paragraphText) {
+  const normalized = String(paragraphText || "").trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const matches = normalized.match(/[^。！？!?]+[。！？!?]?/g);
+  if (!matches) {
+    return [normalized];
+  }
+
+  return matches.map((sentence) => sentence.trim()).filter(Boolean);
+}
+
+function buildFuriganaHtml(sentenceText, tokenizer) {
+  const tokens = tokenizer.tokenize(sentenceText);
+  return tokens
+    .map((token) => {
+      const surface = token.surface_form || token.surface || "";
+      if (!surface) {
+        return "";
+      }
+
+      if (!KANJI_REGEX.test(surface)) {
+        return escapeHtml(surface);
+      }
+
+      const reading = token.reading && token.reading !== "*" ? token.reading : "";
+      const hiragana = reading ? toHiragana(reading, { passRomaji: true }) : "";
+      if (!hiragana) {
+        return escapeHtml(surface);
+      }
+
+      return `<ruby>${escapeHtml(surface)}<rt>${escapeHtml(hiragana)}</rt></ruby>`;
+    })
+    .join("");
+}
+
+async function buildTokenizer() {
+  if (!fs.existsSync(TOKENIZER_DIC_PATH)) {
+    throw new Error(
+      `kuromoji dictionary missing at ${TOKENIZER_DIC_PATH}. Run "npm install" first.`
+    );
+  }
+
+  return new Promise((resolve, reject) => {
+    kuromoji.builder({ dicPath: TOKENIZER_DIC_PATH }).build((error, tokenizer) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve(tokenizer);
+    });
+  });
+}
+
 function looksLikeGeneratedTitle(title) {
   return /^part\d+/i.test(title) || /^ch\d+$/i.test(title) || /^id\d+$/i.test(title);
 }
@@ -126,7 +196,8 @@ function parseTocTitles(ncxXml, ncxPath) {
   return titleMap;
 }
 
-function extractBook(epubPath) {
+async function extractBook(epubPath) {
+  const tokenizer = await buildTokenizer();
   const zip = new AdmZip(epubPath);
   const entryMap = new Map(
     zip
@@ -249,11 +320,19 @@ function extractBook(epubPath) {
       inferredTitle ||
       `Section ${chapters.length + 1}`;
 
+    const paragraphSentences = paragraphs.map((paragraphText) =>
+      splitSentences(paragraphText).map((sentenceText) => ({
+        text: sentenceText,
+        rubyHtml: buildFuriganaHtml(sentenceText, tokenizer)
+      }))
+    );
+
     chapters.push({
       id: `chapter-${String(chapters.length + 1).padStart(3, "0")}`,
       title: chapterTitle,
       source: chapterPath,
-      paragraphs
+      paragraphs,
+      paragraphSentences
     });
   }
 
@@ -272,7 +351,7 @@ function extractBook(epubPath) {
   };
 }
 
-function main() {
+async function main() {
   const epubArg = process.argv[2];
   const outputArg = process.argv[3];
   const epubPath = epubArg ? path.resolve(epubArg) : selectDefaultEpub();
@@ -282,7 +361,7 @@ function main() {
     throw new Error(`EPUB file not found: ${epubPath}`);
   }
 
-  const book = extractBook(epubPath);
+  const book = await extractBook(epubPath);
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, JSON.stringify(book, null, 2), "utf8");
 
@@ -291,4 +370,7 @@ function main() {
   console.log(`Saved data: ${outputPath}`);
 }
 
-main();
+main().catch((error) => {
+  console.error(error.message || error);
+  process.exit(1);
+});

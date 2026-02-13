@@ -1,10 +1,6 @@
 import "./style.css";
-import kuromoji from "kuromoji";
-import { toHiragana } from "wanakana";
 
 const BOOK_DATA_PATH = "/data/book.json";
-const DICT_PATH = "/dict/";
-const KANJI_REGEX = /[\u3400-\u9fff々〆ヵヶ]/u;
 
 const STORAGE_KEYS = {
   apiKey: "ja-reader-google-tts-key",
@@ -23,15 +19,14 @@ const VOICES = [
 
 const state = {
   book: null,
-  tokenizer: null,
   chapterIndex: 0,
+  renderToken: 0,
   apiKey: localStorage.getItem(STORAGE_KEYS.apiKey) || "",
   voice: localStorage.getItem(STORAGE_KEYS.voice) || VOICES[0].value,
   speed: Number(localStorage.getItem(STORAGE_KEYS.speed) || "1"),
   playbackToken: 0,
   audio: new Audio(),
   activeSentenceButton: null,
-  furiganaCache: new Map(),
   audioCache: new Map()
 };
 
@@ -57,9 +52,9 @@ bootstrap().catch((error) => {
 
 async function bootstrap() {
   initControls();
-  setStatus("正在加载书籍与假名引擎...");
+  setStatus("正在加载书籍...");
 
-  const [book] = await Promise.all([loadBookData(), loadTokenizer()]);
+  const book = await loadBookData();
   state.book = book;
 
   elements.bookTitle.textContent = book.title;
@@ -71,7 +66,7 @@ async function bootstrap() {
 
   const savedChapter = Number(localStorage.getItem(STORAGE_KEYS.chapter) || "0");
   const initialChapter = Number.isInteger(savedChapter) && savedChapter >= 0 ? savedChapter : 0;
-  renderChapter(clamp(initialChapter, 0, book.chapters.length - 1));
+  await renderChapter(clamp(initialChapter, 0, book.chapters.length - 1));
 
   setStatus("已就绪。点击任意句子即可朗读。");
 }
@@ -89,6 +84,7 @@ function initControls() {
     option.textContent = voice.label;
     elements.voiceSelect.appendChild(option);
   }
+
   elements.voiceSelect.value = state.voice;
   elements.voiceSelect.addEventListener("change", (event) => {
     state.voice = event.target.value;
@@ -130,25 +126,6 @@ async function loadBookData() {
   return response.json();
 }
 
-async function loadTokenizer() {
-  try {
-    state.tokenizer = await new Promise((resolve, reject) => {
-      kuromoji.builder({ dicPath: DICT_PATH }).build((error, tokenizer) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve(tokenizer);
-      });
-    });
-  } catch (error) {
-    console.warn("Furigana tokenizer unavailable. Falling back to plain text.", error);
-    state.tokenizer = null;
-    setStatus("假名引擎加载失败，将显示原文。");
-  }
-}
-
 function renderChapterList() {
   elements.chapterList.replaceChildren();
 
@@ -158,12 +135,16 @@ function renderChapterList() {
     button.type = "button";
     button.textContent = chapter.title;
     button.dataset.index = String(index);
-    button.addEventListener("click", () => renderChapter(index));
+    button.addEventListener("click", () => {
+      renderChapter(index).catch((error) => {
+        setStatus(`章节渲染失败: ${error.message}`);
+      });
+    });
     elements.chapterList.appendChild(button);
   });
 }
 
-function renderChapter(chapterIndex) {
+async function renderChapter(chapterIndex) {
   const chapter = state.book.chapters[chapterIndex];
   if (!chapter) {
     return;
@@ -177,37 +158,84 @@ function renderChapter(chapterIndex) {
   elements.chapterTitle.textContent = chapter.title;
   elements.readerContent.replaceChildren();
 
-  const fragment = document.createDocumentFragment();
-
-  for (const paragraphText of chapter.paragraphs) {
-    const sentences = splitSentences(paragraphText);
-    if (sentences.length === 0) {
-      continue;
-    }
-
-    const paragraph = document.createElement("p");
-    paragraph.className = "paragraph";
-
-    for (const sentenceText of sentences) {
-      const sentenceButton = document.createElement("button");
-      sentenceButton.className = "sentence";
-      sentenceButton.type = "button";
-      sentenceButton.dataset.text = sentenceText;
-      sentenceButton.innerHTML = buildFuriganaHtml(sentenceText);
-      sentenceButton.addEventListener("click", () => handleSentenceClick(sentenceButton, sentenceText));
-      paragraph.appendChild(sentenceButton);
-    }
-
-    fragment.appendChild(paragraph);
-  }
-
-  elements.readerContent.appendChild(fragment);
-
   for (const button of elements.chapterList.querySelectorAll(".chapter-button")) {
     button.classList.toggle("active", Number(button.dataset.index) === chapterIndex);
   }
 
-  setStatus(`已加载章节：${chapter.title}`);
+  const renderToken = ++state.renderToken;
+  setStatus(`正在渲染章节：${chapter.title}`);
+
+  const paragraphRows = getParagraphRows(chapter);
+  const chunkSize = 8;
+
+  for (let start = 0; start < paragraphRows.length; start += chunkSize) {
+    if (renderToken !== state.renderToken) {
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    const end = Math.min(start + chunkSize, paragraphRows.length);
+
+    for (let rowIndex = start; rowIndex < end; rowIndex += 1) {
+      const row = paragraphRows[rowIndex];
+      if (row.length === 0) {
+        continue;
+      }
+
+      const paragraph = document.createElement("p");
+      paragraph.className = "paragraph";
+
+      for (const sentence of row) {
+        const sentenceButton = document.createElement("button");
+        sentenceButton.className = "sentence";
+        sentenceButton.type = "button";
+        sentenceButton.dataset.text = sentence.text;
+        sentenceButton.innerHTML = sentence.rubyHtml || escapeHtml(sentence.text);
+        sentenceButton.addEventListener("click", () =>
+          handleSentenceClick(sentenceButton, sentence.text)
+        );
+        paragraph.appendChild(sentenceButton);
+      }
+
+      fragment.appendChild(paragraph);
+    }
+
+    elements.readerContent.appendChild(fragment);
+    await nextFrame();
+  }
+
+  if (renderToken === state.renderToken) {
+    setStatus(`已加载章节：${chapter.title}`);
+  }
+}
+
+function getParagraphRows(chapter) {
+  const fromData = chapter.paragraphSentences;
+  if (
+    Array.isArray(fromData) &&
+    fromData.length === chapter.paragraphs.length &&
+    fromData.every((row) => Array.isArray(row))
+  ) {
+    return fromData
+      .map((row) =>
+        row
+          .map((sentence) => ({
+            text: String(sentence?.text || "").trim(),
+            rubyHtml: String(sentence?.rubyHtml || "").trim()
+          }))
+          .filter((sentence) => sentence.text)
+      )
+      .filter((row) => row.length > 0);
+  }
+
+  return chapter.paragraphs
+    .map((paragraphText) =>
+      splitSentences(paragraphText).map((sentenceText) => ({
+        text: sentenceText,
+        rubyHtml: escapeHtml(sentenceText)
+      }))
+    )
+    .filter((row) => row.length > 0);
 }
 
 function splitSentences(paragraphText) {
@@ -222,41 +250,6 @@ function splitSentences(paragraphText) {
   }
 
   return matches.map((sentence) => sentence.trim()).filter(Boolean);
-}
-
-function buildFuriganaHtml(sentenceText) {
-  if (state.furiganaCache.has(sentenceText)) {
-    return state.furiganaCache.get(sentenceText);
-  }
-
-  let html = escapeHtml(sentenceText);
-
-  if (state.tokenizer) {
-    const tokens = state.tokenizer.tokenize(sentenceText);
-    html = tokens
-      .map((token) => {
-        const surface = token.surface_form || token.surface || "";
-        if (!surface) {
-          return "";
-        }
-
-        if (!KANJI_REGEX.test(surface)) {
-          return escapeHtml(surface);
-        }
-
-        const reading = token.reading && token.reading !== "*" ? token.reading : "";
-        const hiragana = reading ? toHiragana(reading, { passRomaji: true }) : "";
-        if (!hiragana) {
-          return escapeHtml(surface);
-        }
-
-        return `<ruby>${escapeHtml(surface)}<rt>${escapeHtml(hiragana)}</rt></ruby>`;
-      })
-      .join("");
-  }
-
-  state.furiganaCache.set(sentenceText, html);
-  return html;
 }
 
 async function handleSentenceClick(sentenceButton, sentenceText) {
@@ -391,6 +384,12 @@ function base64Mp3ToObjectUrl(base64Content) {
 
 function setStatus(message) {
   elements.statusText.textContent = message;
+}
+
+function nextFrame() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
 }
 
 function escapeHtml(text) {
